@@ -19,14 +19,14 @@ func TestDownloadFromMavenCentral(t *testing.T) {
 	assert.Positive(t, fi.Size())
 }
 
-func TestDownloadWithDir(t *testing.T) {
+func TestDownloadWithOutputPath(t *testing.T) {
 	td, cwd := setup(t)
 	defer tearDown(t, td, cwd)
 
 	r := NewRepository("", "", "")
 	a := NewArtifact("org.apache.commons", "commons-text", "1.9", "javadoc", "")
-	path, err := DownloadMavenArtifact(r, a, "out")
-	assert.Equal(t, "out/commons-text-1.9-javadoc.jar", path)
+	path, err := DownloadMavenArtifact(r, a, "out/path.jar")
+	assert.Equal(t, "out/path.jar", path)
 	assert.Nil(t, err)
 	fi, err := os.Stat(path)
 	assert.Positive(t, fi.Size())
@@ -40,7 +40,7 @@ func TestDownloadNotFound(t *testing.T) {
 	a := NewArtifact("invalid.group", "commons-text", "1.9", "", "")
 	path, err := DownloadMavenArtifact(r, a, "")
 	assert.Equal(t, "", path)
-	assert.Equal(t, "status code 404 returned. URL: https://repo1.maven.org/maven2/invalid/group/commons-text/1.9/commons-text-1.9.jar", err.Error())
+	assert.ErrorContains(t, err, "status code 404 returned. URL: https://repo1.maven.org/maven2/invalid/group/commons-text/1.9/commons-text-1.9")
 }
 
 func TestDownloadFromPrivateRepository(t *testing.T) {
@@ -51,7 +51,7 @@ func TestDownloadFromPrivateRepository(t *testing.T) {
 	a := NewArtifact("invalid.group", "commons-text", "1.9", "", "")
 	path, err := DownloadMavenArtifact(r, a, "")
 	assert.Equal(t, "", path)
-	assert.Equal(t, "status code 404 returned. URL: https://repo1.maven.org/maven2/invalid/group/commons-text/1.9/commons-text-1.9.jar", err.Error())
+	assert.ErrorContains(t, err, "status code 404 returned. URL: https://repo1.maven.org/maven2/invalid/group/commons-text/1.9/commons-text-1.9")
 }
 
 func TestDownloadSnapshot(t *testing.T) {
@@ -65,4 +65,23 @@ func TestDownloadSnapshot(t *testing.T) {
 	assert.Nil(t, err)
 	fi, err := os.Stat(path)
 	assert.Positive(t, fi.Size())
+}
+
+func TestDownloadTwice(t *testing.T) {
+	td, cwd := setup(t)
+	defer tearDown(t, td, cwd)
+
+	r := NewRepository("", "", "")
+	a := NewArtifact("org.apache.commons", "commons-text", "1.9", "", "")
+	path, err := DownloadMavenArtifact(r, a, "")
+	assert.Equal(t, "commons-text-1.9.jar", path)
+	assert.Nil(t, err)
+	fi1, err := os.Stat(path)
+	assert.Positive(t, fi1.Size())
+
+	path, err = DownloadMavenArtifact(r, a, "")
+	assert.Equal(t, "commons-text-1.9.jar", path)
+	assert.Nil(t, err)
+	fi2, err := os.Stat(path)
+	assert.Equal(t, fi1.ModTime(), fi2.ModTime())
 }

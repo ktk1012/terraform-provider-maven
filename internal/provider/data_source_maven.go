@@ -38,15 +38,10 @@ func dataSourceMavenArtifact() *schema.Resource {
 				Default:     "jar",
 				Description: "Extension of the artifact file.",
 			},
-			"output_dir": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: "Path of the directory where the artifact file is located.",
-			},
 			"output_path": {
 				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "Path of the artifact file.",
+				Optional:    true,
+				Description: "Path of the file where the artifact file is located.",
 			},
 			"output_size": {
 				Type:        schema.TypeInt,
@@ -83,12 +78,12 @@ func dataSourceMavenArtifactRead(ctx context.Context, d *schema.ResourceData, m 
 	version := d.Get("version").(string)
 	classifier := d.Get("classifier").(string)
 	extension := d.Get("extension").(string)
-	outputDir := d.Get("output_dir").(string)
+	outputPath := d.Get("output_path").(string)
 
 	artifact := NewArtifact(groupId, artifactId, version, classifier, extension)
 	repository := m.(*Repository)
 
-	filePath, err := DownloadMavenArtifact(repository, artifact, outputDir)
+	filePath, err := DownloadMavenArtifact(repository, artifact, outputPath)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -98,7 +93,6 @@ func dataSourceMavenArtifactRead(ctx context.Context, d *schema.ResourceData, m 
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	d.Set("output_path", filePath)
 	d.Set("output_size", fi.Size())
 
 	// Calculate hashes

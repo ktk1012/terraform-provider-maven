@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -70,6 +72,10 @@ func (a *Artifact) Url(r *Repository, m *Metadata) string {
 	return r.Url + a.Path() + a.FileName(m)
 }
 
+func (a *Artifact) ChecksumUrl(r *Repository, m *Metadata) string {
+	return r.Url + a.Path() + a.FileName(m) + ".md5"
+}
+
 func (a *Artifact) Path() string {
 	return fmt.Sprintf("%s/%s/%s/", strings.Replace(a.GroupId, ".", "/", -1), a.ArtifactId, a.Version)
 }
@@ -95,7 +101,10 @@ func (r *Metadata) SnapshotVersion() string {
 	return fmt.Sprintf("%s-%s", r.Timestamp, r.BuildNumber)
 }
 
-func DownloadMavenArtifact(repository *Repository, artifact *Artifact, outputDir string) (string, error) {
+func DownloadMavenArtifact(repository *Repository, artifact *Artifact, outputPath string) (string, error) {
+	if outputPath == "" {
+		outputPath = artifact.FileName(nil)
+	}
 
 	var metadata *Metadata = nil
 	if artifact.IsSnapshot() {
@@ -117,6 +126,28 @@ func DownloadMavenArtifact(repository *Repository, artifact *Artifact, outputDir
 			return "", nil
 		}
 	}
+
+	// 1. download checksum
+	// 2. check file existance
+	// 3. if not exists || checksum changed. donwload it
+	checksum, err := downloadChecksum(repository, artifact, metadata)
+	if err != nil {
+		return "", err
+	}
+
+	checksumMatches := false
+	fileExists := fileExists(outputPath)
+	if fileExists {
+		checksumMatches, err = verifyChecksum(outputPath, checksum)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	if fileExists && checksumMatches {
+		return outputPath, nil
+	}
+
 	url := artifact.Url(repository, metadata)
 	resp, err := httpGet(url, repository.Username, repository.Password)
 	if err != nil {
@@ -128,6 +159,7 @@ func DownloadMavenArtifact(repository *Repository, artifact *Artifact, outputDir
 	defer resp.Body.Close()
 
 	// default is current directory
+	outputDir := path.Dir(outputPath)
 	if outputDir == "" {
 		outputDir = "."
 	}
@@ -138,9 +170,7 @@ func DownloadMavenArtifact(repository *Repository, artifact *Artifact, outputDir
 		}
 	}
 
-	filepath := path.Join(outputDir, artifact.FileName(nil))
-
-	out, err := os.Create(filepath)
+	out, err := os.Create(outputPath)
 	if err != nil {
 		return "", err
 	}
@@ -151,7 +181,34 @@ func DownloadMavenArtifact(repository *Repository, artifact *Artifact, outputDir
 		return "", err
 	}
 
-	return filepath, nil
+	return outputPath, nil
+}
+
+func downloadChecksum(repository *Repository, artifact *Artifact, metadata *Metadata) (string, error) {
+	url := artifact.ChecksumUrl(repository, metadata)
+	resp, err := httpGet(url, repository.Username, repository.Password)
+	if err != nil {
+		return "", err
+	}
+	if 400 <= resp.StatusCode {
+		return "", errors.New(fmt.Sprintf("status code %d returned. URL: %s", resp.StatusCode, url))
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(body), nil
+}
+
+func fileExists(path string) bool {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
 }
 
 func httpGet(url, user, pwd string) (*http.Response, error) {
@@ -166,4 +223,23 @@ func httpGet(url, user, pwd string) (*http.Response, error) {
 	}
 
 	return http.Get(url)
+}
+
+func verifyChecksum(path string, expectedChecksum string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Errorf("Error while open file: %+w", err)
+	}
+
+	defer func(f *os.File) {
+		_ = f.Close()
+	}(f)
+
+	hasher := md5.New()
+
+	if _, err := io.Copy(hasher, f); err != nil {
+		return false, err
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)) == expectedChecksum, nil
 }
