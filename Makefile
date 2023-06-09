@@ -1,10 +1,11 @@
 TEST?=$$(go list ./... | grep -v 'vendor')
-HOSTNAME=registry.terraform.io
-NAMESPACE=kota65535
+HOSTNAME=schperics.com
+NAMESPACE=internal
 NAME=maven
 BINARY=terraform-provider-${NAME}
-VERSION=0.0.5
-OS_ARCH=darwin_amd64
+VERSION=0.0.6
+OS := $(shell ./helpers.sh get_platform)
+ARCH := $(shell ./helpers.sh get_arch)
 
 default: install
 
@@ -15,8 +16,8 @@ release:
 	goreleaser release --rm-dist --snapshot --skip-publish  --skip-sign
 
 install: build
-	mkdir -p ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
-	mv ${BINARY} ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
+	mkdir -p ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/$(OS)_$(ARCH)
+	mv ${BINARY} ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/$(OS)_$(ARCH)
 
 test:
 	go test -i $(TEST) || exit 1                                                   
